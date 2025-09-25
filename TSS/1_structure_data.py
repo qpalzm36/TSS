@@ -3,7 +3,7 @@ import os
 import json
 from tqdm import tqdm
 
-# --- 配置 ---
+
 os.environ["OPENAI_API_KEY"] = ""
 try:
     client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"), base_url="")
