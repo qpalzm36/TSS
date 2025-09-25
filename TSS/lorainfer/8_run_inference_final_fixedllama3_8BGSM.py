@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
 import json
 import re
 from tqdm import tqdm
@@ -9,7 +9,7 @@ from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
 from vllm import LLM, SamplingParams
-import argparse  # <--- 新增导入
+import argparse  
 
 MAX_NEW_TOKENS = 512
 MAX_STEPS = 20
@@ -71,68 +71,63 @@ def parse_json_robust(raw_content: str, problem_id: int) -> dict:
         return {"error": f"parsing_failed_after_escape: {str(e_escaped)}", "original_content": raw_content}
 
 def _extract_answer_from_text(text: str) -> str:
-    """
-    从GSM8K格式的文本中提取最终答案。
-    该版本融合了多种策略，按可靠性降序排列。
-    """
+   
+    
     if not text:
         return None
     conclusion_match = re.search(r'\[CONCLUSION\](.*)', text, re.DOTALL)
     if conclusion_match:
-        # 我们直接返回结论的全部内容，保留所有上下文
+        
         return conclusion_match.group(1).strip().strip('"')
-    # 策略 1: 查找 \boxed{} (最高优先级)
-    # 使用了更强大的正则表达式，可以处理嵌套括号
+    
     all_boxed_contents = re.findall(r'\\boxed{((?:[^{}]|{[^{}]*})*)}', text)
 
     if not all_boxed_contents:
-        return "" # 没找到任何 boxed
+        return "" 
 
-    # 2. 定位到最后一个 boxed 的内容
+    
     last_content = all_boxed_contents[-1].strip()
 
-    # 3. 从内容中提取最后一个数字 (增加了对负号 \-? 的支持)
-    #    这个正则表达式会匹配 "-1,234.56" 或 "$42" 这样的字符串
+  
     numeric_matches = re.findall(r'\-?[\$\d,]+(?:\.\d+)?', last_content)
     
     if numeric_matches:
-        # 4. 清理并返回最后一个找到的数字
+   
         last_number_str = numeric_matches[-1]
         return last_number_str.replace('$', '').replace(',', '').strip()
     
-    # 5. 如果里面没数字，返回原始内容
+
     return last_content
 
-    # 策略 2: 查找 #### 格式 (GSM8K的标准格式，非常可靠的备用选项)
+
     match = re.search(r'####\s*(.*)$', text, re.DOTALL)
     if match:
         return match.group(1).strip()
     
-    # 策略 3: 查找 "The answer is" 或 "The final answer is" 格式 (通用备用选项)
+ 
     match = re.search(r'[Tt]he (?:final )?answer is\s+(.*?)\.?$', text, re.DOTALL)
     if match:
         return match.group(1).strip()
         
-    # 策略 4 (最后手段): 提取文本中最后一个可能是答案的数字
-    # 这个策略非常通用，可以处理模型未按任何特殊格式输出答案的情况
+   
     matches = re.findall(r'[\$\d,]+(?:\.\d+)?', text)
     if matches:
-        # 清理并返回最后一个匹配项
+  
         return matches[-1].replace('$', '').replace(',', '').strip()
 
-    # 如果连数字都找不到，返回None
+
     return text
 
 def extract_final_answer_robust(generated_steps: list) -> str:
     if not generated_steps: return None
     last_step_obj = generated_steps[-1]
     if not isinstance(last_step_obj, dict): return None
+
     
-    # 如果解析失败，尝试从原始输出中提取答案
     if 'error' in last_step_obj and 'original_content' in last_step_obj:
         return _extract_answer_from_text(last_step_obj['original_content'])
     
-    # 从成功解析的字典中提取文本内容
+
     step_text = ""
     for value in last_step_obj.values():
         if isinstance(value, str):
@@ -141,7 +136,7 @@ def extract_final_answer_robust(generated_steps: list) -> str:
     
     return _extract_answer_from_text(step_text)
 
-# --- 配置 ---
+
 def parse_args():
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("--generator_model_path", type=str, default="", help="")
@@ -161,7 +156,7 @@ TEST_SET_PATH = args.test_set_path
 OUTPUT_LOG_PATH = args.output_log_path
 
 def create_decision_prompt(problem: str, previous_step: str = None) -> str:
-    """【Llama-3 版】为决策阶段创建提示"""
+
     instruction = (
         "You are a planner for a math solving agent. Your task is to decide if you need to retrieve an example for the next step. "
         "Based on the problem and the previous step, your response MUST be one of two tags and nothing else: `<retrieval>` or `<no retrieval>`."
@@ -179,7 +174,7 @@ def create_decision_prompt(problem: str, previous_step: str = None) -> str:
     return prompt
 
 def create_content_prompt(problem: str, previous_step=None, retrieval_context: str = None) -> str:
-    """【Llama-3 版】为内容生成阶段创建提示"""
+
     instruction = (
         "You are an expert math solver. Your goal is to generate the next step to solve a math problem. "
         "Your response MUST be a single JSON object with a key like `\"Step N\"` and the explanation as the value. "
@@ -229,7 +224,7 @@ def run_inference_vllm():
     if os.path.exists(OUTPUT_LOG_PATH):
         os.remove(OUTPUT_LOG_PATH)
 
-    print("正在加载 vLLM 生成器...")
+
     llm = LLM(
         model=GENERATOR_MODEL_PATH,
         tensor_parallel_size=1,
@@ -241,10 +236,10 @@ def run_inference_vllm():
     )
     tokenizer = llm.get_tokenizer()
 
-    print(f"正在加载检索器模型: {RETRIEVER_MODEL_PATH}")
+
     retriever = SentenceTransformer(RETRIEVER_MODEL_PATH, device=DEVICE)
     
-    print(f"正在加载知识库: {KNOWLEDGE_BASE_DOCS_PATH}")
+
     kb_docs = []
     with open(KNOWLEDGE_BASE_DOCS_PATH, 'r', encoding='utf-8') as f:
         for line in f:
@@ -255,9 +250,9 @@ def run_inference_vllm():
             for key in step_keys: text_parts.append(f"{key}: {data[key]}")
             kb_docs.append("\n\n".join(text_parts))
     
-    print(f"正在加载 FAISS 索引: {FAISS_INDEX_PATH}")
+
     index = faiss.read_index(FAISS_INDEX_PATH)
-    print("所有模型和数据加载成功。")
+
 
     sampling_params_decision = SamplingParams(
         max_tokens=5, temperature=0.0, stop=["<retrieval>", "<no retrieval>"],
@@ -268,11 +263,11 @@ def run_inference_vllm():
         include_stop_str_in_output=True
     )
     
-    print(f"正在加载测试集: {TEST_SET_PATH}")
+
     with open(TEST_SET_PATH, 'r', encoding='utf-8') as f_in:
         test_problems = [json.loads(line) for line in f_in]
     
-    print(f"共加载 {len(test_problems)} 个测试问题")
+
     
     request_states = [
         {
@@ -290,16 +285,16 @@ def run_inference_vllm():
     for step in range(MAX_STEPS):
         active_requests = [r for r in request_states if not r["finished"]]
         if not active_requests:
-            print("所有问题都已解决。")
+         
             break
-        print(f"\n--- 第 {step+1} 步, 处理 {len(active_requests)} 个请求 ---")
+     
 
-        print("  - 阶段 1: 批量进行检索决策...")
+    
         decision_prompts = [create_decision_prompt(r["problem_data"]["problem"], r["generated_steps"][-1] if r["generated_steps"] else None) for r in active_requests]
         decision_outputs = llm.generate(decision_prompts, sampling_params_decision)
 
         content_prompts = []
-        for i, request in enumerate(tqdm(active_requests, desc="  - 处理决策并准备执行")):
+        for i, request in enumerate(tqdm(active_requests, desc="  - ")):
             decision_raw = decision_outputs[i].outputs[0].text.strip()
             needs_retrieval = "<retrieval>" in decision_raw
             retrieved_context = None
@@ -317,10 +312,10 @@ def run_inference_vllm():
             })
             content_prompts.append(create_content_prompt(request["problem_data"]["problem"], request["generated_steps"][-1] if request["generated_steps"] else None, retrieved_context))
 
-        print("  - 阶段 2: 批量生成步骤内容...")
+  
         content_outputs = llm.generate(content_prompts, sampling_params_content)
 
-        for i, request in enumerate(tqdm(active_requests, desc="  - 处理生成内容")):
+        for i, request in enumerate(tqdm(active_requests, desc="  - ")):
             output_obj = content_outputs[i].outputs[0]
             raw_content = output_obj.text.strip()
             is_end_of_solution = "[END_OF_SOLUTION]" in raw_content
@@ -336,9 +331,9 @@ def run_inference_vllm():
             if is_parsing_error or is_end_of_solution or len(request["generated_steps"]) >= MAX_STEPS:
                 request["finished"] = True
 
-    print("\n所有推理步骤完成或达到最大步数。")
+
     with open(OUTPUT_LOG_PATH, 'w', encoding='utf-8') as f_out:
-        for request in tqdm(request_states, desc="写入日志文件"):
+        for request in tqdm(request_states, desc=""):
             final_generated_answer = extract_final_answer_robust(request["generated_steps"]) if request["generated_steps"] else None
             
             log_entry = {
@@ -350,7 +345,7 @@ def run_inference_vllm():
                 "inference_trace": request["inference_trace"],
             }
             f_out.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
-    print(f"\n推理完成。结果已记录到: {OUTPUT_LOG_PATH}")
+
 
 if __name__ == "__main__":
     try:
