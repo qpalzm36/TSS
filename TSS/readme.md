@@ -11,7 +11,6 @@ pip install tiktoken faiss-cpu datasets peft </br>
 pip install vllm </br>
 
 **retriever**:fine-tune bge-en-v1.5 </br>
-finetuned model can be stored in "/data/yangcheng/aaai/retriever_finetuned" </br>
 
 **generator**:fine-tune Qwen-2.5-3B-Instruct,Qwen2.5-Math-7B-Instruct,,Meta-Llama3-8B-Instruct,Llama-2-7b-chat-hf </br>
 
@@ -20,3 +19,4 @@ train genetrator using LLaMA-Factory
 Inference files are in the fold: lorainfer
 
 evaluate files are files starting with 9_evaluate
+
