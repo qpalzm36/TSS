@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
 import json
 import re
 from tqdm import tqdm
@@ -9,13 +9,13 @@ from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
 from vllm import LLM, SamplingParams
-import argparse  # <--- 新增导入
+import argparse  
 
 MAX_NEW_TOKENS = 512  
 MAX_STEPS = 20        
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 def protect_math_expressions(content: str):
-    """保护数学表达式，返回一个从占位符到表达式的映射。"""
+
     math_map = {}
     protected_content = content
     
@@ -40,7 +40,7 @@ def protect_math_expressions(content: str):
     return protected_content, math_map
 
 def restore_math_expressions(obj, math_map):
-    """使用映射恢复被保护的数学表达式。"""
+
     if isinstance(obj, dict):
         return {k: restore_math_expressions(v, math_map) for k, v in obj.items()}
     elif isinstance(obj, list):
@@ -56,11 +56,11 @@ def restore_math_expressions(obj, math_map):
         return obj
 
 def escape_latex_for_json(s: str) -> str:
-    """在送入JSON解析器前，专门转义LaTeX命令中的反斜杠。"""
+
     return re.sub(r'(?<!\\)\\([a-zA-Z]+)', r'\\\\\1', s)
 
 def parse_json_robust(raw_content: str, problem_id: int) -> dict:
-    """一个健壮的JSON解析器。"""
+
     if not isinstance(raw_content, str):
         return {"error": "parsing_failed: input is not a string", "original_content": raw_content or ""}
 
@@ -85,60 +85,54 @@ def parse_json_robust(raw_content: str, problem_id: int) -> dict:
         return {"error": f"parsing_failed_after_escape: {str(e_escaped)}", "original_content": raw_content}
 
 def _extract_answer_from_text(text: str) -> str:
-    """
-    从GSM8K格式的文本中提取最终答案。
-    该版本融合了多种策略，按可靠性降序排列。
-    """
+    
     if not text:
         return None
     conclusion_match = re.search(r'\[CONCLUSION\](.*)', text, re.DOTALL)
     if conclusion_match:
-        # 我们直接返回结论的全部内容，保留所有上下文
+    
         return conclusion_match.group(1).strip().strip('"')
-    # 策略 1: 查找 \boxed{} (最高优先级)
-    # 使用了更强大的正则表达式，可以处理嵌套括号
+   号
     all_boxed_contents = re.findall(r'\\boxed{((?:[^{}]|{[^{}]*})*)}', text)
 
     if not all_boxed_contents:
-        return "" # 没找到任何 boxed
+        return "" 
 
-    # 2. 定位到最后一个 boxed 的内容
+   
     last_content = all_boxed_contents[-1].strip()
 
-    # 3. 从内容中提取最后一个数字 (增加了对负号 \-? 的支持)
-    #    这个正则表达式会匹配 "-1,234.56" 或 "$42" 这样的字符串
+ 
     numeric_matches = re.findall(r'\-?[\$\d,]+(?:\.\d+)?', last_content)
     
     if numeric_matches:
-        # 4. 清理并返回最后一个找到的数字
+   
         last_number_str = numeric_matches[-1]
         return last_number_str.replace('$', '').replace(',', '').strip()
     
-    # 5. 如果里面没数字，返回原始内容
+
     return last_content
 
-    # 策略 2: 查找 #### 格式 (GSM8K的标准格式，非常可靠的备用选项)
+
     match = re.search(r'####\s*(.*)$', text, re.DOTALL)
     if match:
         return match.group(1).strip()
     
-    # 策略 3: 查找 "The answer is" 或 "The final answer is" 格式 (通用备用选项)
+
     match = re.search(r'[Tt]he (?:final )?answer is\s+(.*?)\.?$', text, re.DOTALL)
     if match:
         return match.group(1).strip()
         
-    # 策略 4 (最后手段): 提取文本中最后一个可能是答案的数字
-    # 这个策略非常通用，可以处理模型未按任何特殊格式输出答案的情况
+   
     matches = re.findall(r'[\$\d,]+(?:\.\d+)?', text)
     if matches:
-        # 清理并返回最后一个匹配项
+
         return matches[-1].replace('$', '').replace(',', '').strip()
 
-    # 如果连数字都找不到，返回None
+
     return text
 
 def extract_final_answer_robust(generated_steps: list) -> str:
-    """一个更简单、更可靠的答案提取器。"""
+
     if not generated_steps:
         return None
 
@@ -160,7 +154,7 @@ def extract_final_answer_robust(generated_steps: list) -> str:
 
 
 def create_decision_prompt(problem: str, previous_step: str = None) -> str:
-    """为决策阶段创建提示"""
+
     instruction = (
         "You are a planner for a math solving agent. Your task is to decide if you need to retrieve an example for the next step. "
         "Based on the problem and the previous step, your response MUST be one of two tags and nothing else: `<retrieval>` or `<no-retrieval>`."
@@ -177,7 +171,7 @@ def create_decision_prompt(problem: str, previous_step: str = None) -> str:
     return prompt
 
 def create_content_prompt(problem: str, previous_step=None, retrieval_context: str = None) -> str:
-    """为内容生成阶段创建提示，针对GSM8K格式修改"""
+
     instruction = (
         "You are an expert math solver. Your goal is to generate the next step to solve a math problem. "
         "Your response MUST be a single JSON object with a key like `\"Step N\"` and the explanation as the value. "
@@ -188,15 +182,15 @@ def create_content_prompt(problem: str, previous_step=None, retrieval_context: s
     input_parts = [f'"problem": {problem_str}']
     
     if previous_step:
-        # 你的原始逻辑：处理字符串或字典
+ 
         if isinstance(previous_step, str):
             try:
-                # 尝试将字符串解析为字典，以确保格式正确
+        
                 previous_step_dict = json.loads(previous_step)
                 input_parts.append(f"\"previous_step\": {json.dumps(previous_step_dict)}")
             except json.JSONDecodeError:
-                 pass # 保持你原来的逻辑，如果不是合法JSON字符串则忽略
-        elif isinstance(previous_step, dict): # 确保也能处理字典
+                 pass 
+        elif isinstance(previous_step, dict): 
             input_parts.append(f"\"previous_step\": {json.dumps(previous_step)}")
     
     if retrieval_context:
@@ -210,7 +204,7 @@ def create_content_prompt(problem: str, previous_step=None, retrieval_context: s
     return prompt
 
 def run_retrieval(query, retriever_model, faiss_index, knowledge_base, k=1):
-    """编码查询并从知识库中检索前k个文档"""
+
     query_embedding = retriever_model.encode([query], convert_to_tensor=True, show_progress_bar=False)
     query_embedding_np = query_embedding.cpu().numpy().astype('float32')
     if query_embedding_np.ndim == 1:
@@ -221,7 +215,7 @@ def run_retrieval(query, retriever_model, faiss_index, knowledge_base, k=1):
     return retrieved_docs[0] if retrieved_docs else None
 
 def run_inference_vllm(generator_model_path, retriever_model_path, knowledge_base_docs_path, faiss_index_path, test_set_path, output_log_path):
-    # 先清理可能存在的Ray会话
+
     try:
         import ray
         if ray.is_initialized():
@@ -229,7 +223,7 @@ def run_inference_vllm(generator_model_path, retriever_model_path, knowledge_bas
     except:
         pass
     
-    # 清理Ray临时文件
+
     import subprocess
     try:
         subprocess.run(["ray", "stop"], capture_output=True, timeout=10)
@@ -240,22 +234,21 @@ def run_inference_vllm(generator_model_path, retriever_model_path, knowledge_bas
     if os.path.exists(output_log_path):
         os.remove(output_log_path)
 
-    print("正在加载 vLLM 生成器...")
     llm = LLM(
         model=generator_model_path,
         tensor_parallel_size=1,
         max_model_len=4096,
         trust_remote_code=True,
-        gpu_memory_utilization=0.4,  # 降低显存使用率
+        gpu_memory_utilization=0.4, 
         dtype="bfloat16",
         enforce_eager=True
     )
     tokenizer = llm.get_tokenizer()
 
-    print(f"正在加载检索器模型: {retriever_model_path}")
+
     retriever = SentenceTransformer(retriever_model_path, device=DEVICE)
     
-    print(f"正在加载知识库: {knowledge_base_docs_path}")
+
     kb_docs = []
     with open(knowledge_base_docs_path, 'r', encoding='utf-8') as f:
         for line in f:
@@ -271,11 +264,9 @@ def run_inference_vllm(generator_model_path, retriever_model_path, knowledge_bas
                 text_parts.append(f"{key}: {data[key]}")
             kb_docs.append("\n\n".join(text_parts))
     
-    print(f"正在加载 FAISS 索引: {faiss_index_path}")
     index = faiss.read_index(faiss_index_path)
-    print("所有模型和数据加载成功。")
-    
-    # 采样参数
+
+
     sampling_params_decision = SamplingParams(
         max_tokens=5,
         temperature=0.0,
@@ -292,14 +283,14 @@ def run_inference_vllm(generator_model_path, retriever_model_path, knowledge_bas
         include_stop_str_in_output=True
     )
 
-    # 加载GSM8K数据集
+
     with open(test_set_path, 'r', encoding='utf-8') as f_in:
         test_problems = []
         for line in f_in:
             data = json.loads(line)
-            # 提取GSM8K格式的问题和答案
+        
             problem = data["question"]
-            # 从answer中提取正确答案 (#### 后面的内容)
+   
             answer_match = re.search(r'####\s+(.*?)(?:\s*$|\n)', data["answer"], re.DOTALL)
             answer = answer_match.group(1).strip() if answer_match else None
             
@@ -318,17 +309,13 @@ def run_inference_vllm(generator_model_path, retriever_model_path, knowledge_bas
         } for i, p in enumerate(test_problems)
     ]
 
-    # 两个阶段的推理循环
+
     for step in range(MAX_STEPS):
         active_requests = [r for r in request_states if not r["finished"]]
         if not active_requests:
-            print("所有问题都已解决。")
+
             break
         
-        print(f"\n--- 第 {step+1} 步, 处理 {len(active_requests)} 个请求 ---")
-
-        # 阶段 1: 决策
-        print("  - 阶段 1: 批量进行检索决策...")
         decision_prompts = [
             create_decision_prompt(
                 r["problem_data"]["problem"],
@@ -337,9 +324,9 @@ def run_inference_vllm(generator_model_path, retriever_model_path, knowledge_bas
         ]
         decision_outputs = llm.generate(decision_prompts, sampling_params_decision)
 
-        # 准备阶段 2 的输入
+
         content_prompts = []
-        for i, request in enumerate(tqdm(active_requests, desc="  - 处理决策并准备执行")):
+        for i, request in enumerate(tqdm(active_requests, desc="  - ")):
             decision_raw = decision_outputs[i].outputs[0].text.strip()
             needs_retrieval = "<retrieval>" in decision_raw
 
@@ -367,23 +354,22 @@ def run_inference_vllm(generator_model_path, retriever_model_path, knowledge_bas
                 retrieved_context
             ))
 
-        # 阶段 2: 内容生成
-        print("  - 阶段 2: 批量生成步骤内容...")
+
         content_outputs = llm.generate(content_prompts, sampling_params_content)
 
-        # 处理阶段 2 的结果并更新状态
-        for i, request in enumerate(tqdm(active_requests, desc="  - 处理生成内容")):
+
+        for i, request in enumerate(tqdm(active_requests, desc="  - ")):
             output_obj = content_outputs[i].outputs[0]
             raw_content = output_obj.text.strip()
             
             is_end_of_solution = "[END_OF_SOLUTION]" in raw_content
             content_to_parse = raw_content.split("[END_OF_SOLUTION]")[0].strip()
             
-            # 3. 解析纯净的JSON内容
+   
             parsed_step_obj = parse_json_robust(content_to_parse, request['problem_id'])
             request["generated_steps"].append(parsed_step_obj)
             
-            # 检查是否出现解析错误。这种错误是代码层面的，应该终止。
+            
             is_parsing_error = "error" in parsed_step_obj
             
             request["inference_trace"][-1].update({
@@ -394,19 +380,16 @@ def run_inference_vllm(generator_model_path, retriever_model_path, knowledge_bas
                 "finish_reason": output_obj.finish_reason
             })
             
-            # 4. 只有在三种情况下才终止对这个问题的推理：
-            #    a) 发生 *解析错误*
-            #    b) 我们约定的结束标记出现了
-            #    c) 到达了最大步数限制
+            
             if is_parsing_error or is_end_of_solution or len(request["generated_steps"]) >= MAX_STEPS:
                 request["finished"] = True
 
-    print("\n所有推理步骤完成或达到最大步数。")
     
-    # 写入日志文件
+    
+    
     with open(output_log_path, 'w', encoding='utf-8') as f_out:
-        for request in tqdm(request_states, desc="写入日志文件"):
-            # 使用健壮的答案提取函数
+        for request in tqdm(request_states, desc=""):
+            
             final_generated_answer = extract_final_answer_robust(
                 request["generated_steps"]
             ) if request["generated_steps"] else None
@@ -421,8 +404,7 @@ def run_inference_vllm(generator_model_path, retriever_model_path, knowledge_bas
             }
             f_out.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
 
-    print(f"\n推理完成。结果已记录到: {output_log_path}")
-
+  
 def main():
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("--generator_model_path", type=str, default="", help="")
