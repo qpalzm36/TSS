@@ -121,7 +121,7 @@ def main(args):
     
     client = get_openai_client()
     if not client:
-        print("由于OpenAI客户端错误，无法开始评估。")
+        
         return
 
     if not os.path.exists(args.inference_log_path):
