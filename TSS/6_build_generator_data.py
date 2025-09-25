@@ -10,9 +10,7 @@ import matplotlib.pyplot as plt
 import re
 import argparse
 
-# --- Configuration ---
-# 请在这里填入您的OpenAI API密钥
-# IMPORTANT: Replace with your actual OpenAI API key
+
 os.environ["OPENAI_API_KEY"] = ""
 
 
@@ -20,10 +18,10 @@ openai.api_key = os.environ["OPENAI_API_KEY"]
 try:
     client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"), base_url="https://api.chatanywhere.tech/v1")
 except TypeError:
-    print("错误:OPENAI_API_KEY 未设置。请在您的环境中设置该变量。")
+
     exit(1)
 
-# 默认路径
+
 MODEL_PATH = ""
 FAISS_INDEX_PATH = ""
 KNOWLEDGE_BASE_DOCS_PATH = ""
@@ -142,12 +140,12 @@ def find_previous_step_content(data: dict, current_step_num: int) -> str:
 def main():
     parser = argparse.ArgumentParser(description="Build generator data with retrieval and quality filtering.")
     # ... (parser arguments remain the same) ...
-    parser.add_argument("--model_path", type=str, default=MODEL_PATH, help="Path to the finetuned retriever model")
-    parser.add_argument("--faiss_index_path", type=str, default=FAISS_INDEX_PATH, help="Path to the FAISS index file")
-    parser.add_argument("--knowledge_base_docs_path", type=str, default=KNOWLEDGE_BASE_DOCS_PATH, help="Path to the knowledge base documents file")
-    parser.add_argument("--input_data_path", type=str, default=INPUT_DATA_PATH, help="Path to the input data file")
-    parser.add_argument("--output_data_path", type=str, default=OUTPUT_DATA_PATH, help="Path to save the processed data file")
-    parser.add_argument("--output_chart_path", type=str, default=OUTPUT_CHART_PATH, help="Path to save the performance chart")
+    parser.add_argument("--model_path", type=str, default=MODEL_PATH, help="")
+    parser.add_argument("--faiss_index_path", type=str, default=FAISS_INDEX_PATH, help="")
+    parser.add_argument("--knowledge_base_docs_path", type=str, default=KNOWLEDGE_BASE_DOCS_PATH, help="")
+    parser.add_argument("--input_data_path", type=str, default=INPUT_DATA_PATH, help="")
+    parser.add_argument("--output_data_path", type=str, default=OUTPUT_DATA_PATH, help="")
+    parser.add_argument("--output_chart_path", type=str, default=OUTPUT_CHART_PATH, help="")
     args = parser.parse_args()
 
 
