@@ -70,7 +70,7 @@ def main(args):
 
     full_evaluation_data = []
     
-    for result in tqdm(all_results, desc="评估结果"):
+    for result in tqdm(all_results, desc=""):
         problem_eval = {
             "problem_id": result["problem_id"],
             "year": result.get("year", "unknown"),
