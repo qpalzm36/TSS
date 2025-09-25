@@ -2,14 +2,14 @@ import os
 import json
 import openai
 from tqdm import tqdm
-import argparse  # <--- 新增导入
+import argparse  # 
 
 os.environ["OPENAI_API_KEY"] = ""
 API_BASE_URL = ""
-# 评估参数
+
 EVALUATION_MODEL = "gpt-4o-mini"
 
-# --- GPT-4o-mini 评估模板 ---
+
 PROMPT_TEMPLATES = {
     "answer_accuracy": {
         "system": "You are a mathematical answer comparison expert. Your task is to determine if an AI-generated answer (Generated Answer) is mathematically equivalent to the standard answer (Gold Answer). Ignore differences in units, formatting, or trailing zeros. For example, '12' and '12.0' are equivalent, as are '$12' and '12 dollars'. Return a JSON object containing only one key, 'is_correct', with a value of true or false.",
@@ -17,19 +17,19 @@ PROMPT_TEMPLATES = {
     }
 }
 
-# --- 核心函数 ---
+
 
 def get_openai_client():
-    """初始化并返回OpenAI客户端。"""
+    
     try:
         client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"), base_url=API_BASE_URL)
         return client
     except Exception as e:
-        print(f"初始化OpenAI客户端时出错: {e}")
+        
         return None
 
 def call_evaluator(client, metric_name, **kwargs):
-    """使用适当的提示调用GPT-4o-mini评估器。"""
+    
     if not client: return None
     
     template = PROMPT_TEMPLATES[metric_name]
@@ -53,14 +53,14 @@ def call_evaluator(client, metric_name, **kwargs):
         return None
 
 def main(args):
-    """运行评估过程的主函数。"""
+    
     client = get_openai_client()
     if not client:
-        print("由于OpenAI客户端错误，无法开始评估。")
+        
         return
 
     if not os.path.exists(args.inference_log_path):
-        print(f"错误: 在 {args.inference_log_path} 找不到推理日志文件")
+        
         return
 
     all_results = []
@@ -70,7 +70,7 @@ def main(args):
 
     full_evaluation_data = []
     
-    for result in tqdm(all_results, desc="评估结果"):
+    for result in tqdm(all_results, desc=""):
         problem_eval = {
             "problem_id": result["problem_id"],
             "problem_text": result["problem_text"],
@@ -79,7 +79,7 @@ def main(args):
             "is_correct": None
         }
 
-        # 只评估最终答案准确性
+        
         if result["gold_answer"] is not None and result["final_generated_answer"] is not None:
             eval_res = call_evaluator(client, "answer_accuracy", gold=result["gold_answer"], gen=result["final_generated_answer"])
             if eval_res and isinstance(eval_res.get("is_correct"), bool):
@@ -87,7 +87,7 @@ def main(args):
         
         full_evaluation_data.append(problem_eval)
 
-    # --- 计算并打印最终报告 ---
+    
     total_problems = len(full_evaluation_data)
     final_answer_correct_count = sum(1 for r in full_evaluation_data if r["is_correct"] is True)
     
@@ -97,17 +97,17 @@ def main(args):
         "raw_count": f"{final_answer_correct_count}/{total_problems}"
     }
 
-    print("\n--- 评估报告 ---")
+    
     print(json.dumps(report, indent=4, ensure_ascii=False))
 
-    # 保存详细评估数据和报告
+    
     with open(args.evaluation_report_path, 'w', encoding='utf-8') as f:
         json.dump({
             "summary": report,
             "details": full_evaluation_data
         }, f, indent=4, ensure_ascii=False)
     
-    print(f"\n详细报告已保存至: {args.evaluation_report_path}")
+    print(f"\: {args.evaluation_report_path}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="")
