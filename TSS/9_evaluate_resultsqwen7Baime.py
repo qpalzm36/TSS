@@ -100,7 +100,7 @@ def main(args):
         "detailed_results": full_evaluation_data
     }
 
-    print("\n--- AIME 评估报告 ---")
+
     print(f"{total_problems}")
     print(f"{report['final_answer_accuracy']}")
 
