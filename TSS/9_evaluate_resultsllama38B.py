@@ -4,7 +4,7 @@ import openai
 from tqdm import tqdm
 import numpy as np
 import re
-import argparse  # 
+import argparse   
 
 
 os.environ["OPENAI_API_KEY"] = ""
