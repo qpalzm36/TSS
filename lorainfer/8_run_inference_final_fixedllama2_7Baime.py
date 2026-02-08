@@ -9,7 +9,7 @@ from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
 from vllm import LLM, SamplingParams
-import argparse  # <--- 新增导入
+import argparse  
 MAX_NEW_TOKENS = 1024  # Increased for more complex AIME problems
 MAX_STEPS = 25
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -73,7 +73,7 @@ def _extract_answer_from_text(text: str) -> str:
     if not text: return None
     conclusion_match = re.search(r'\[CONCLUSION\](.*)', text, re.DOTALL)
     if conclusion_match:
-        # 我们直接返回结论的全部内容，保留所有上下文
+
         return conclusion_match.group(1).strip().strip('"')
     process_match = re.search(r'\[PROCESS\](.*)', text, re.DOTALL)
     if process_match:
@@ -81,13 +81,13 @@ def _extract_answer_from_text(text: str) -> str:
     boxed_match = re.search(r'\\boxed{((?:[^{}]|{[^{}]*})*)}', text)
     if boxed_match:
         return boxed_match.group(1).strip()
-    # 策略 3: 查找 The final answer is
+
     result_match = re.search(r'The final answer is\s*(.*)', text, re.IGNORECASE | re.DOTALL)
     if result_match:
         return result_match.group(1).strip().strip('"')
     matches = re.findall(r'[\$\d,]+(?:\.\d+)?', text)
     if matches:
-        # 清理并返回最后一个匹配项
+ 
         return matches[-1].replace('$', '').replace(',', '').strip()
     return text.strip()
 
@@ -104,7 +104,7 @@ def extract_final_answer_robust(generated_steps: list) -> str:
             break
     return _extract_answer_from_text(step_text)
 
-# --- 配置 ---
+
 def parse_args():
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("--generator_model_path", type=str, default="", help="")
@@ -126,7 +126,7 @@ OUTPUT_LOG_PATH = args.output_log_path
 
 
 def create_decision_prompt(problem: str, previous_step: str = None) -> str:
-    """【Llama-2 版】为决策阶段创建提示"""
+    
     system_instruction = (
         "You are a planner for a math solving agent. Your task is to decide if you need to retrieve an example for the next step. "
         "Based on the problem and the previous step, your response MUST be one of two tags and nothing else: `<retrieval>` or `<no retrieval>`."
@@ -140,7 +140,7 @@ def create_decision_prompt(problem: str, previous_step: str = None) -> str:
     return prompt
 
 def create_content_prompt(problem: str, previous_step=None, retrieval_context: str = None) -> str:
-    """为AIME问题创建提示"""
+
     system_instruction = (
         "You are an expert math solver. Your goal is to generate the next step to solve a math problem. "
         "Your response MUST be a single JSON object with a key like `\"Step N\"` and the explanation as the value. "
@@ -189,7 +189,7 @@ def run_inference_aime():
     if os.path.exists(OUTPUT_LOG_PATH):
         os.remove(OUTPUT_LOG_PATH)
 
-    print("正在加载 vLLM 生成器...")
+
     llm = LLM(
         model=GENERATOR_MODEL_PATH,
         tensor_parallel_size=1,
@@ -201,10 +201,10 @@ def run_inference_aime():
     )
     tokenizer = llm.get_tokenizer()
 
-    print(f"正在加载检索器模型: {RETRIEVER_MODEL_PATH}")
+
     retriever = SentenceTransformer(RETRIEVER_MODEL_PATH, device=DEVICE)
     
-    print(f"正在加载知识库: {KNOWLEDGE_BASE_DOCS_PATH}")
+
     kb_docs = []
     with open(KNOWLEDGE_BASE_DOCS_PATH, 'r', encoding='utf-8') as f:
         for line in f:
@@ -213,9 +213,9 @@ def run_inference_aime():
             for key in data.keys(): text_parts.append(f"{key}: {data[key]}")
             kb_docs.append("\n\n".join(text_parts))
     
-    print(f"正在加载 FAISS 索引: {FAISS_INDEX_PATH}")
+
     index = faiss.read_index(FAISS_INDEX_PATH)
-    print("所有模型和数据加载成功。")
+
     
     sampling_params_decision = SamplingParams(
         max_tokens=5, temperature=0.0, stop=["<retrieval>", "<no retrieval>"],
@@ -246,16 +246,16 @@ def run_inference_aime():
     for step in range(MAX_STEPS):
         active_requests = [r for r in request_states if not r["finished"]]
         if not active_requests:
-            print("所有问题都已解决。")
+     
             break
-        print(f"\n--- 第 {step+1} 步, 处理 {len(active_requests)} 个请求 ---")
 
-        print("  - 阶段 1: 批量进行检索决策...")
+
+ 
         decision_prompts = [create_decision_prompt(r["problem_data"]["problem"], r["generated_steps"][-1] if r["generated_steps"] else None) for r in active_requests]
         decision_outputs = llm.generate(decision_prompts, sampling_params_decision)
 
         content_prompts = []
-        for i, request in enumerate(tqdm(active_requests, desc="  - 处理决策并准备执行")):
+        for i, request in enumerate(tqdm(active_requests, desc="  - ")):
             decision_raw = decision_outputs[i].outputs[0].text.strip()
             needs_retrieval = "<retrieval>" in decision_raw
             retrieved_context = None
@@ -282,10 +282,10 @@ def run_inference_aime():
                 retrieved_context
             ))
 
-        print("  - 阶段 2: 批量生成步骤内容...")
+
         content_outputs = llm.generate(content_prompts, sampling_params_content)
 
-        for i, request in enumerate(tqdm(active_requests, desc="  - 处理生成内容")):
+        for i, request in enumerate(tqdm(active_requests, desc="  - ")):
             output_obj = content_outputs[i].outputs[0]
             raw_content = output_obj.text.strip()
             is_end_of_solution = "[END_OF_SOLUTION]" in raw_content
@@ -305,7 +305,7 @@ def run_inference_aime():
             if is_parsing_error or is_end_of_solution or len(request["generated_steps"]) >= MAX_STEPS:
                 request["finished"] = True
 
-    print("\n所有推理步骤完成或达到最大步数。")
+
     
     with open(OUTPUT_LOG_PATH, 'w', encoding='utf-8') as f_out:
         for request in tqdm(request_states, desc="写入日志文件"):
@@ -322,7 +322,7 @@ def run_inference_aime():
             }
             f_out.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
 
-    print(f"\n推理完成。结果已记录到: {OUTPUT_LOG_PATH}")
+
 
 if __name__ == "__main__":
     try:
