@@ -10,8 +10,7 @@ import matplotlib.pyplot as plt
 import re
 import argparse
 
-# --- Configuration ---
-# 请在这里填入您的OpenAI API密钥
+
 # IMPORTANT: Replace with your actual OpenAI API key
 os.environ["OPENAI_API_KEY"] = ""
 
@@ -20,10 +19,10 @@ openai.api_key = os.environ["OPENAI_API_KEY"]
 try:
     client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"), base_url="https://api.chatanywhere.tech/v1")
 except TypeError:
-    print("错误:OPENAI_API_KEY 未设置。请在您的环境中设置该变量。")
+
     exit(1)
 
-# 默认路径
+
 MODEL_PATH = ""
 FAISS_INDEX_PATH = ""
 KNOWLEDGE_BASE_DOCS_PATH = ""
