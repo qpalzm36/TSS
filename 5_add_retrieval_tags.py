@@ -7,24 +7,23 @@ import re
 from typing import Optional, Tuple
 from collections import Counter
 
-# --- 配置 ---
-# 请确保您的API密钥已设置为环境变量，或者在此处直接指定
+
 os.environ["OPENAI_API_KEY"] = ""
 try:
     client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"), base_url="")
 except TypeError:
-    print("错误：OPENAI_API_KEY 未设置。请在您的环境中设置该变量。")
+
     exit(1)
 
 MODEL = "gpt-4o-mini"
 MAX_RETRIES = 5
 RETRY_DELAY = 5  # seconds
 
-# --- 文件路径配置 ---
+
 INPUT_DATA_PATH = ""
 OUTPUT_DATA_PATH = ""
 
-# --- Prompt 设计 (已根据您的反馈进行优化) ---
+
 SYSTEM_PROMPT = """
 You are an expert in mathematical reasoning and pedagogy. Your task is to analyze the reasoning leap from a `previous_step` to a `current_step` within the context of a given `problem`. Based on this analysis, you will decide if a student would need to retrieve a guiding example to understand or perform this specific step.
 
@@ -62,9 +61,7 @@ Your response MUST be a JSON object with two keys: "tag" and "category".
 """
 
 def get_tag_and_category(problem: str, previous_step: Optional[str], current_step: str) -> Tuple[str, str]:
-    """
-    调用LLM API获取标签和分类。
-    """
+   
     prompt_data = {
         "problem": problem,
         "previous_step": previous_step if previous_step else "This is the first step.",
@@ -92,24 +89,20 @@ def get_tag_and_category(problem: str, previous_step: Optional[str], current_ste
             if tag in ["<retrieval>", "<no-retrieval>"] and isinstance(category, str):
                 return tag, category
             else:
-                print(f"警告：收到无效数据 Tag: {tag}, Category: {category}。正在重试...")
+
 
         except json.JSONDecodeError as e:
-            print(f"JSON解析失败 (尝试 {attempt + 1}/{MAX_RETRIES}): {e}")
+
         except Exception as e:
-            print(f"API调用失败 (尝试 {attempt + 1}/{MAX_RETRIES}): {e}")
+
         
         if attempt < MAX_RETRIES - 1:
-            time.sleep(RETRY_DELAY)
-    
-    print("错误：达到最大重试次数，返回默认值。")
+
     return "<no-retrieval>", "Error/Default"
 
 def process_data():
-    """
-    主处理函数：读取、调用API、写入结果并收集统计信息。
-    """
-    print(f"正在从 '{INPUT_DATA_PATH}' 读取数据...")
+   
+
     with open(INPUT_DATA_PATH, 'r', encoding='utf-8') as f_in:
         lines = f_in.readlines()
 
@@ -119,7 +112,7 @@ def process_data():
     retrieval_category_counts = Counter()
 
     with open(OUTPUT_DATA_PATH, 'w', encoding='utf-8') as f_out:
-        for i, line in enumerate(tqdm(lines, desc="正在处理问题")):
+        for i, line in enumerate(tqdm(lines, desc="")):
             if not line.strip():
                 continue
             
@@ -137,9 +130,8 @@ def process_data():
             for step_key in step_keys:
                 current_step_text = data[step_key]
                 
-                print(f"\n[问题 {i+1}/{len(lines)}] 正在评估: {step_key}...")
                 tag, category = get_tag_and_category(data["problem"], previous_step_text, current_step_text)
-                print(f"  -> 获得标签: {tag} | 分类: {category}")
+
                 
                 if tag == "<retrieval>":
                     retrieval_steps_in_problem += 1
@@ -152,34 +144,28 @@ def process_data():
             if step_keys:
                 problem_ratio = retrieval_steps_in_problem / len(step_keys)
                 all_problem_ratios.append(problem_ratio)
-                print(f"--- 问题 {i+1} 完成. 检索步骤占比: {problem_ratio:.2%} ({retrieval_steps_in_problem}/{len(step_keys)}) ---")
 
             f_out.write(json.dumps(new_data) + '\n')
 
-    # --- 打印最终统计报告 ---
-    print("\n\n" + "="*56)
-    print(" " * 18 + "最终统计报告")
-    print("="*56)
+
     
     if all_problem_ratios:
         average_ratio = sum(all_problem_ratios) / len(all_problem_ratios)
-        print(f"\n📊 平均需要检索的步骤占比: {average_ratio:.2%}")
-    else:
-        print("\n📊 未处理任何问题，无法计算平均占比。")
 
-    print("\n\n🔍 Retrieval 原因分类统计:")
+    else:
+
+
+
     total_retrievals = sum(retrieval_category_counts.values())
     if total_retrievals > 0:
-        print(f"{'分类':<35} {'数量':<10} {'占比':<10}")
+
         print("-" * 56)
         for category, count in retrieval_category_counts.most_common():
             percentage = (count / total_retrievals) * 100
             print(f"{category:<35} {count:<10} {f'{percentage:.2f}%':<10}")
     else:
-        print("  - 未记录任何retrieval事件。")
-    print("\n" + "="*56)
 
-    print(f"\n处理完成！带标签的数据已保存到 '{OUTPUT_DATA_PATH}'")
+    print("\n" + "="*56)
 
 if __name__ == "__main__":
     process_data()
