@@ -13,8 +13,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Evaluate the accuracy of the retrieval decision model.")
     parser.add_argument("--generator_model_path", type=str, required=True, help="Path to the generator model.")
     parser.add_argument("--model_type", type=str, required=True, choices=['llama2', 'llama3', 'qwen'], help="Type of the model for prompt formatting.")
-    parser.add_argument("--parsed_data_path", type=str, default="/data/yangcheng/aaai/specialtokenprediction/parsed_decision_eval_data.jsonl", help="Path to the parsed evaluation data.")
-    parser.add_argument("--output_dir", type=str, default="/data/yangcheng/aaai/specialtokenprediction/results", help="Directory to save evaluation results.")
+    parser.add_argument("--parsed_data_path", type=str, default="", help="Path to the parsed evaluation data.")
+    parser.add_argument("--output_dir", type=str, default="", help="Directory to save evaluation results.")
     parser.add_argument("--gpu_id", type=str, default="0", help="GPU ID to use.")
     return parser.parse_args()
 
