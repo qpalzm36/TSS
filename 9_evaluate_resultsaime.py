@@ -2,7 +2,7 @@ import os
 import json
 import openai
 from tqdm import tqdm
-import argparse  # <--- 新增导入
+import argparse
 
 
 os.environ["OPENAI_API_KEY"] = ""
