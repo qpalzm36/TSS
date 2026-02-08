@@ -9,14 +9,13 @@ from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
 from vllm import LLM, SamplingParams
-import argparse  # <--- 新增导入
+import argparse
 
 MAX_NEW_TOKENS = 512  
 MAX_STEPS = 15        
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 def protect_math_expressions(content: str):
-    """【新】保护数学表达式，返回一个从占位符到表达式的映射。"""
     math_map = {}
     protected_content = content
     
@@ -26,13 +25,11 @@ def protect_math_expressions(content: str):
         (r'\\\\?boxed\{[^}]*\}', 'BOXED'),
         (r'\\\\?text\{[^}]*\}', 'TEXT'),
         (r'\\\\?left\([^)]*\\\\?right\)', 'PAREN'),
-        (r'\$[^$]*\$', 'DOLLAR'), # 保护美元符号包围的公式
+        (r'\$[^$]*\$', 'DOLLAR'),
     ]
     
-    # 使用一个统一的占位符格式
     placeholder_template = "__MATH_EXPR_{}__"
-    
-    # 从后往前查找和替换，避免索引问题
+
     for pattern, _ in math_patterns:
         matches = list(re.finditer(pattern, protected_content))
         for match in reversed(matches):
@@ -43,15 +40,14 @@ def protect_math_expressions(content: str):
     return protected_content, math_map
 
 def restore_math_expressions(obj, math_map):
-    """【新】使用映射恢复被保护的数学表达式。"""
     if isinstance(obj, dict):
         return {k: restore_math_expressions(v, math_map) for k, v in obj.items()}
     elif isinstance(obj, list):
         return [restore_math_expressions(item, math_map) for item in obj]
     elif isinstance(obj, str):
         result = obj
-        # 多次迭代以处理嵌套的占位符
-        for _ in range(3): # 迭代3次足以处理大多数嵌套
+
+        for _ in range(3):
             for placeholder, expr in math_map.items():
                 if placeholder in result:
                     result = result.replace(placeholder, expr)
@@ -60,98 +56,69 @@ def restore_math_expressions(obj, math_map):
         return obj
 
 def escape_latex_for_json(s: str) -> str:
-    """
-    【全新 V2】在送入JSON解析器前，专门转义LaTeX命令中的反斜杠。
-    例如，将`\frac`变为`\\frac`，但会忽略已经转义的 `\\frac`。
-    """
-    # 使用负向先行断言 `(?<!\\)` 来匹配前面不是反斜杠的单个反斜杠。
-    # 这可以防止将 `\\frac` 错误地变成 `\\\frac`。
+    
     return re.sub(r'(?<!\\)\\([a-zA-Z]+)', r'\\\\\1', s)
 
 def parse_json_robust(raw_content: str, problem_id: int) -> dict:
-    """
-    【全新 V3】一个极其健壮的JSON解析器，这是净化环节的核心。
-    它只负责一件事：将LLM的原始输出字符串，尽最大努力变成一个干净的Python字典。
-    【关键修复】采用“先尝试，后修复”策略。
-    """
+    
     if not isinstance(raw_content, str):
         return {"error": "parsing_failed: input is not a string", "original_content": raw_content or ""}
 
     content = raw_content.strip()
     
-    # 策略 1: 直接解析。对于绝大多数情况，这应该是可行的。
     try:
         return json.loads(content)
     except json.JSONDecodeError as e:
-        # 只有在因为无效转义序列（典型的LaTeX问题）失败时，才进入修复流程。
+
         if "Invalid \\escape" not in str(e):
-            # 对于其他JSON错误（如括号不匹配），尝试寻找最后一个 '}'
+
             try:
                 last_brace_index = content.rfind('}')
                 if last_brace_index != -1:
                     return json.loads(content[:last_brace_index + 1])
             except json.JSONDecodeError:
-                pass # 如果还是失败，就放弃，返回最终错误
+                pass
             return {"error": f"parsing_failed: {str(e)}", "original_content": raw_content}
 
-    # 策略 2: 修复LaTeX转义后重试。
-    # 这个策略专门用来解决 `Invalid \escape` 错误
     try:
         content_escaped = escape_latex_for_json(content)
         return json.loads(content_escaped)
     except json.JSONDecodeError as e_escaped:
-        # 如果修复后仍然失败，返回详细的错误信息
         return {"error": f"parsing_failed_after_escape: {str(e_escaped)}", "original_content": raw_content}
 
 
 def _extract_answer_from_text(text: str) -> str:
-    """
-    【新 V3】从给定的文本中提取答案的辅助函数。
-    【新增能力】可以从 [PROCESS] 块中提取最后的数值。
-    """
- 
+   
     if not text:
         return None
-    
-    # 策略 1: 查找 \boxed{} (最高优先级)
-    # 【关键修复】修复正则表达式以正确处理嵌套的 LaTeX，例如 \frac{a}{b}
+
     boxed_match = re.search(r'\\boxed{((?:[^{}]|{[^{}]*})*)}', text)
     if boxed_match:
         return boxed_match.group(1).strip()
 
-    # 策略 2: 查找 [CONCLUSION]
     conclusion_match = re.search(r'\[CONCLUSION\](.*)', text, re.DOTALL)
     if conclusion_match:
-        # 对从CONCLUSION提取的内容，再次尝试提取\boxed
         conclusion_content = conclusion_match.group(1).strip().strip('"')
         boxed_in_conclusion = re.search(r'\\boxed\{(.+?)\}', conclusion_content)
         if boxed_in_conclusion:
             return boxed_in_conclusion.group(1).strip()
         return conclusion_content
         
-    # 策略 3: 查找 The final answer is
     result_match = re.search(r'The final answer is\s*(.*)', text, re.IGNORECASE | re.DOTALL)
     if result_match:
         return result_match.group(1).strip().strip('"')
 
-    # 【备用策略】策略 4: 从 [PROCESS] 块中寻找最后的结果
-    # 寻找 `... = <number>` 这种模式
     process_match = re.findall(r'\[PROCESS\].*?=\s*([-\d\.]+(?:/[-\d\.]+)?)\s*', text, re.DOTALL | re.IGNORECASE)
     if process_match:
-        return process_match[-1].strip() # 返回最后一个匹配到的数字
+        return process_match[-1].strip()
     matches = re.findall(r'[\$\d,]+(?:\.\d+)?', text)
     if matches:
-        # 清理并返回最后一个匹配项
         return matches[-1].replace('$', '').replace(',', '').strip()
 
     return text
 
 def extract_final_answer_robust(generated_steps: list) -> str:
-    """
-    【重构】一个更简单、更可靠的答案提取器。
-    它现在接收一个干净的Python对象列表，不再进行任何字符串清理或JSON解析。
-    【关键修复】如果最后一步解析失败，它会尝试从原始输出中提取答案。
-    """
+    
     if not generated_steps:
         return None
 
@@ -160,12 +127,9 @@ def extract_final_answer_robust(generated_steps: list) -> str:
     if not isinstance(last_step_obj, dict):
         return None
 
-    # 【关键修复】检查最后一步是否为解析错误
     if 'error' in last_step_obj and 'original_content' in last_step_obj:
-        # 如果解析失败，从原始文本中提取答案
         return _extract_answer_from_text(last_step_obj['original_content'])
 
-    # 从成功解析的字典中提取文本内容
     step_text = ""
     for value in last_step_obj.values():
         if isinstance(value, str):
@@ -175,7 +139,6 @@ def extract_final_answer_robust(generated_steps: list) -> str:
     return _extract_answer_from_text(step_text)
 
 def create_decision_prompt(problem: str, previous_step: str = None) -> str:
-    """为决策阶段创建提示"""
     instruction = (
         "You are a planner for a math solving agent. Your task is to decide if you need to retrieve an example for the next step. "
         "Based on the problem and the previous step, your response MUST be one of two tags and nothing else: `<retrieval>` or `<no-retrieval>`."
@@ -192,7 +155,6 @@ def create_decision_prompt(problem: str, previous_step: str = None) -> str:
     return prompt
 
 def create_content_prompt(problem: str, previous_step=None, retrieval_context: str = None) -> str:
-    """为内容生成阶段创建提示"""
     instruction = (
         "You are an expert math solver. Your goal is to generate the next step to solve a math problem. "
         "Your response MUST be a single JSON object with a key like `\"Step N\"` and the explanation as the value. "
@@ -203,15 +165,13 @@ def create_content_prompt(problem: str, previous_step=None, retrieval_context: s
     input_parts = [f'"problem": {problem_str}']
     
     if previous_step:
-        # 你的原始逻辑：处理字符串或字典
         if isinstance(previous_step, str):
             try:
-                # 尝试将字符串解析为字典，以确保格式正确
                 previous_step_dict = json.loads(previous_step)
                 input_parts.append(f"\"previous_step\": {json.dumps(previous_step_dict)}")
             except json.JSONDecodeError:
-                 pass # 保持你原来的逻辑，如果不是合法JSON字符串则忽略
-        elif isinstance(previous_step, dict): # 确保也能处理字典
+                 pass
+        elif isinstance(previous_step, dict):
             input_parts.append(f"\"previous_step\": {json.dumps(previous_step)}")
     
     if retrieval_context:
@@ -227,7 +187,6 @@ def create_content_prompt(problem: str, previous_step=None, retrieval_context: s
     return prompt
 
 def run_retrieval(query, retriever_model, faiss_index, knowledge_base, k=1):
-    """编码查询并从知识库中检索前k个文档"""
     query_embedding = retriever_model.encode([query], convert_to_tensor=True, show_progress_bar=False)
     query_embedding_np = query_embedding.cpu().numpy().astype('float32')
     if query_embedding_np.ndim == 1:
@@ -238,15 +197,13 @@ def run_retrieval(query, retriever_model, faiss_index, knowledge_base, k=1):
     return retrieved_docs[0] if retrieved_docs else None
 
 def run_inference_vllm(args):
-    # 先清理可能存在的Ray会话
     try:
         import ray
         if ray.is_initialized():
             ray.shutdown()
     except:
         pass
-    
-    # 清理Ray临时文件
+        
     import subprocess
     try:
         subprocess.run(["ray", "stop"], capture_output=True, timeout=10)
@@ -257,7 +214,6 @@ def run_inference_vllm(args):
     if os.path.exists(args.output_log_path):
         os.remove(args.output_log_path)
 
-    print("正在加载 vLLM 生成器...")
     llm = LLM(
         model=args.generator_model_path,
         tensor_parallel_size=1,
@@ -269,10 +225,8 @@ def run_inference_vllm(args):
     )
     tokenizer = llm.get_tokenizer()
 
-    print(f"正在加载检索器模型: {args.retriever_model_path}")
     retriever = SentenceTransformer(args.retriever_model_path, device=DEVICE)
     
-    print(f"正在加载知识库: {args.knowledge_base_docs_path}")
     kb_docs = []
     with open(args.knowledge_base_docs_path, 'r', encoding='utf-8') as f:
         for line in f:
@@ -288,11 +242,8 @@ def run_inference_vllm(args):
                 text_parts.append(f"{key}: {data[key]}")
             kb_docs.append("\n\n".join(text_parts))
     
-    print(f"正在加载 FAISS 索引: {args.faiss_index_path}")
     index = faiss.read_index(args.faiss_index_path)
-    print("所有模型和数据加载成功。")
     
-    # 采样参数
     sampling_params_decision = SamplingParams(
         max_tokens=5,
         temperature=0.0,
@@ -322,17 +273,11 @@ def run_inference_vllm(args):
         } for i, p in enumerate(test_problems)
     ]
 
-    # 两个阶段的推理循环
     for step in range(MAX_STEPS):
         active_requests = [r for r in request_states if not r["finished"]]
         if not active_requests:
-            print("所有问题都已解决。")
             break
-        
-        print(f"\n--- 第 {step+1} 步, 处理 {len(active_requests)} 个请求 ---")
 
-        # 阶段 1: 决策
-        print("  - 阶段 1: 批量进行检索决策...")
         decision_prompts = [
             create_decision_prompt(
                 r["problem_data"]["problem"],
@@ -341,9 +286,8 @@ def run_inference_vllm(args):
         ]
         decision_outputs = llm.generate(decision_prompts, sampling_params_decision)
 
-        # 准备阶段 2 的输入
         content_prompts = []
-        for i, request in enumerate(tqdm(active_requests, desc="  - 处理决策并准备执行")):
+        for i, request in enumerate(tqdm(active_requests, desc="  - ")):
             decision_raw = decision_outputs[i].outputs[0].text.strip()
             needs_retrieval = "<retrieval>" in decision_raw
 
@@ -371,27 +315,25 @@ def run_inference_vllm(args):
                 retrieved_context
             ))
 
-        # 阶段 2: 内容生成
-        print("  - 阶段 2: 批量生成步骤内容...")
+
+
         content_outputs = llm.generate(content_prompts, sampling_params_content)
 
-        # 处理阶段 2 的结果并更新状态
-        for i, request in enumerate(tqdm(active_requests, desc="  - 处理生成内容")):
+        for i, request in enumerate(tqdm(active_requests, desc="  - ")):
             output_obj = content_outputs[i].outputs[0]
             raw_content = output_obj.text.strip()
             is_end_of_solution = "[END_OF_SOLUTION]" in raw_content
             content_to_parse = raw_content.split("[END_OF_SOLUTION]")[0].strip()
-            """ # 1. 检查我们约定的结束标记
+
             is_end_of_solution = raw_content.endswith("[END_OF_SOLUTION]")
 
-            # 2. 从原始文本中移除结束标记（如果存在），得到需要被解析的纯JSON内容
+
             content_to_parse = raw_content.removesuffix("[END_OF_SOLUTION]").strip() if is_end_of_solution else raw_content """
             
-            # 3. 解析纯净的JSON内容
+
             parsed_step_obj = parse_json_robust(content_to_parse, request['problem_id'])
             request["generated_steps"].append(parsed_step_obj)
-            
-            # 检查是否出现解析错误。这种错误是代码层面的，应该终止。
+
             is_parsing_error = "error" in parsed_step_obj
             
             request["inference_trace"][-1].update({
@@ -401,20 +343,13 @@ def run_inference_vllm(args):
                 "is_end_of_solution": is_end_of_solution,
                 "finish_reason": output_obj.finish_reason
             })
-            
-            # 4. 只有在三种情况下才终止对这个问题的推理：
-            #    a) 发生 *解析错误*
-            #    b) 我们约定的结束标记出现了
-            #    c) 到达了最大步数限制
+
             if is_parsing_error or is_end_of_solution or len(request["generated_steps"]) >= MAX_STEPS:
                 request["finished"] = True
 
-    print("\n所有推理步骤完成或达到最大步数。")
-    
-    # 写入日志文件
     with open(args.output_log_path, 'w', encoding='utf-8') as f_out:
-        for request in tqdm(request_states, desc="写入日志文件"):
-            # 使用健壮的答案提取函数
+        for request in tqdm(request_states, desc=""):
+
             final_generated_answer = extract_final_answer_robust(
                 request["generated_steps"]
             ) if request["generated_steps"] else None
@@ -436,16 +371,15 @@ def run_inference_vllm(args):
             }
             f_out.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
 
-    print(f"\n推理完成。结果已记录到: {args.output_log_path}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="运行Qwen7B模型推理")
-    parser.add_argument("--generator_model_path", type=str, default="/data/yangcheng/aaai/generator_finetuned_ex/Qwen2.5-Math-7B-Instruct-lora", help="生成器模型路径")
-    parser.add_argument("--retriever_model_path", type=str, default="/data/yangcheng/aaai/retriever_finetuned", help="检索器模型路径")
-    parser.add_argument("--knowledge_base_docs_path", type=str, default="/data/yangcheng/aaai/knowledgebase/knowledge_base_docs.jsonl", help="知识库文档路径")
-    parser.add_argument("--faiss_index_path", type=str, default="/data/yangcheng/aaai/knowledgebase/faiss_index.bin", help="FAISS索引路径")
-    parser.add_argument("--test_set_path", type=str, default="/data/yangcheng/aaai/test/test120/structured_test_set.jsonl", help="测试集路径")
-    parser.add_argument("--output_log_path", type=str, default="/data/yangcheng/aaai/result-lf/resultqwen7blora.jsonl", help="输出日志路径")
+    parser = argparse.ArgumentParser(description="")
+    parser.add_argument("--generator_model_path", type=str, default="", help="")
+    parser.add_argument("--retriever_model_path", type=str, default="", help="")
+    parser.add_argument("--knowledge_base_docs_path", type=str, default="", help="")
+    parser.add_argument("--faiss_index_path", type=str, default="", help="")
+    parser.add_argument("--test_set_path", type=str, default="", help="")
+    parser.add_argument("--output_log_path", type=str, default="", help="")
     args = parser.parse_args()
 
     """ try:
