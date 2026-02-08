@@ -8,8 +8,7 @@ import argparse
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 import pandas as pd
 
-# --- 配置 ---
-# 使用 argparse 来接收模型路径和模型类型，使其更灵活
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Evaluate the accuracy of the retrieval decision model.")
     parser.add_argument("--generator_model_path", type=str, required=True, help="Path to the generator model.")
@@ -19,7 +18,6 @@ def parse_args():
     parser.add_argument("--gpu_id", type=str, default="0", help="GPU ID to use.")
     return parser.parse_args()
 
-# --- Prompt 创建函数 ---
 
 def create_llama2_prompt(problem: str, previous_step: dict = None) -> str:
     system_instruction = (
@@ -62,8 +60,6 @@ def create_qwen_prompt(problem: str, previous_step: dict = None) -> str:
     return (f"<|im_start|>system\n{instruction}<|im_end|>\n"
         f"<|im_start|>user\n{input_content}<|im_end|>\n"
         f"<|im_start|>assistant\n")
-
-# --- 主逻辑 ---
 
 def main():
     args = parse_args()
@@ -109,7 +105,7 @@ def main():
     
     print("Preparing prompts for all steps...")
     for problem_data in tqdm(eval_data, desc="Processing problems"):
-        # 【关键修复】检查steps列表是否为空
+
         if not problem_data.get("steps"):
             continue
             
@@ -145,12 +141,10 @@ def main():
     y_pred_str = [all_predictions[i] for i in valid_indices]
     
     labels_map = {"<retrieval>": 1, "<no-retrieval>": 0}
-    # 【加固】处理标签集中可能存在的未知标签
+
     y_true = [labels_map[label] for label in y_true_str if label in labels_map]
     y_pred = [labels_map[y_pred_str[i]] for i, label in enumerate(y_true_str) if label in labels_map]
 
-    # ... (后续的指标计算和保存代码不变) ...
-    # 确保 y_true 和 y_pred 长度一致且不为空
     if not y_true:
         print("No valid labels found to calculate metrics.")
         return
@@ -159,7 +153,7 @@ def main():
     precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='binary', pos_label=1, zero_division=0)
     p_class, r_class, f1_class, s_class = precision_recall_fscore_support(y_true, y_pred, labels=[1, 0], zero_division=0)
 
-    # 准备结果报告
+
     num_other = len(all_predictions) - len(valid_indices)
     results = {
         "model_path": args.generator_model_path,
@@ -180,7 +174,7 @@ def main():
     print("\n--- Evaluation Results ---")
     print(json.dumps(results, indent=2))
     
-    # 保存结果到文件
+
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
     
