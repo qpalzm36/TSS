@@ -9,7 +9,7 @@ from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
 from vllm import LLM, SamplingParams
-import argparse  # <--- 新增导入
+import argparse 
 
 MAX_NEW_TOKENS = 512
 MAX_STEPS = 15
@@ -86,7 +86,7 @@ def _extract_answer_from_text(text: str) -> str:
     if process_match: return process_match[-1].strip()
     matches = re.findall(r'[\$\d,]+(?:\.\d+)?', text)
     if matches:
-        # 清理并返回最后一个匹配项
+
         return matches[-1].replace('$', '').replace(',', '').strip()
     return text
 
@@ -105,13 +105,13 @@ def extract_final_answer_robust(generated_steps: list) -> str:
 
 # --- 配置 ---
 def parse_args():
-    parser = argparse.ArgumentParser(description="运行推理脚本")
-    parser.add_argument("--generator_model_path", type=str, default="/data/yangcheng/aaai/generator_finetuned_ex/Llama-2-7b-chat-hf-lora", help="生成器模型路径")
-    parser.add_argument("--retriever_model_path", type=str, default="/data/yangcheng/aaai/retriever_finetuned", help="检索器模型路径")
-    parser.add_argument("--knowledge_base_docs_path", type=str, default="/data/yangcheng/aaai/knowledgebase/knowledge_base_docs.jsonl", help="知识库文档路径")
-    parser.add_argument("--faiss_index_path", type=str, default="/data/yangcheng/aaai/knowledgebase/faiss_index.bin", help="FAISS索引路径")
-    parser.add_argument("--test_set_path", type=str, default="/data/yangcheng/aaai/test/test120/structured_test_set.jsonl", help="测试集路径")
-    parser.add_argument("--output_log_path", type=str, default="/data/yangcheng/aaai/result-lf/resultllama7blora.jsonl", help="输出日志路径")
+    parser = argparse.ArgumentParser(description="")
+    parser.add_argument("--generator_model_path", type=str, default="", help="")
+    parser.add_argument("--retriever_model_path", type=str, default="", help="")
+    parser.add_argument("--knowledge_base_docs_path", type=str, default="", help="")
+    parser.add_argument("--faiss_index_path", type=str, default="", help="")
+    parser.add_argument("--test_set_path", type=str, default="", help="")
+    parser.add_argument("--output_log_path", type=str, default="", help="")
     return parser.parse_args()
 
 args = parse_args()
