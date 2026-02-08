@@ -4,16 +4,16 @@ import json
 from tqdm import tqdm
 
 # --- 配置 ---
-os.environ["OPENAI_API_KEY"] = "sk-DRNtKTg3hJLuU6J28jaasoxTgqKvKmqweXSViHhVAbcuEmSG"
+os.environ["OPENAI_API_KEY"] = ""
 try:
     client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"), base_url="https://api.chatanywhere.tech/v1")
 except TypeError:
-    print("错误：OPENAI_API_KEY 未设置。请在您的环境中设置该变量。")
+
     exit(1)
 
 MODEL = "gpt-4o-mini"
 
-# --- 文件路径配置 ---
+
 RAW_RETRIEVER_DATA_PATH = ""
 STRUCTURED_RETRIEVER_DATA_PATH = ""
 
@@ -25,7 +25,7 @@ STRUCTURED_KNOWLEDGE_BASE_PATH = ""
 
 ERROR_LOG_FILE = "t"
 
-# --- 用于GPT-4的系统Prompt ---
+
 SYSTEM_PROMPT = """
 You are an expert in mathematical reasoning. Your task is to break down a solution to a math problem into a series of logical steps. Each step must follow this strict format: "[CONDITION] ... [PROCESS] ... [CONCLUSION] ..."
 
@@ -73,7 +73,7 @@ Output: {
 """
 
 def call_gpt4_for_structuring(problem, solution):
-    """调用GPT-4 API进行结构化处理。"""
+
     user_input = {
         "problem": problem,
         "solution": solution
@@ -115,11 +115,11 @@ def call_gpt4_for_structuring(problem, solution):
         return None, error_info
 
 def process_line(line):
-    """处理输入文件中的单行。"""
+
     try:
         data = json.loads(line)
     except json.JSONDecodeError:
-        print(f"跳过无效的JSON行: {line.strip()}")
+
         return None, None
 
     problem = data.get("problem")
@@ -132,8 +132,7 @@ def process_line(line):
     return structured_result, error
 
 def process_file(input_path, output_path):
-    """处理单个文件，将原始数据转换为结构化数据。"""
-    print(f"开始处理文件: {input_path}")
+
     
     output_dir = os.path.dirname(output_path)
     if output_dir:
@@ -163,14 +162,12 @@ def process_file(input_path, output_path):
                 error_file.flush()
                 error_count += 1
 
-    print(f"处理完成: {os.path.basename(input_path)}")
-    print(f"成功: {success_count}, 错误: {error_count}")
-    print(f"结构化数据已保存到: {output_path}")
+  
     
 def main():
-    """主函数，处理所有三份数据文件。"""
+
     if not os.environ.get("OPENAI_API_KEY"):
-        print("错误：OPENAI_API_KEY 环境变量未设置。")
+        print("")
         return
 
     files_to_process = [
@@ -185,10 +182,9 @@ def main():
         if os.path.exists(input_path):
             process_file(input_path, output_path)
         else:
-            print(f"警告：找不到输入文件 {input_path}，跳过处理。")
+            print()
 
-    print("所有文件处理完成！")
-    print(f"如果有错误，请查看错误日志: {ERROR_LOG_FILE}")
+ 
 
 if __name__ == "__main__":
     main()
